@@ -1,5 +1,28 @@
 const { userId, activityUnitId, activityTypeName, workTime } = require("./config");
 
+function parseInterval(intervalStr) {
+    const match = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(intervalStr.trim());
+    if (!match) {
+        throw new Error(`Invalid interval format: ${intervalStr}. Expected HH:MM-HH:MM`);
+    }
+    const [ , sh, sm, eh, em ] = match.map(Number);
+    return {
+        start: { hour: sh, min: sm },
+        end: { hour: eh, min: em }
+    };
+}
+
+function normalizeWorkTime(spec) {
+    const result = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    for (const [day, intervals] of Object.entries(spec || {})) {
+        if (!Array.isArray(intervals)) continue;
+        result[day] = intervals.map(parseInterval);
+    }
+    return result;
+}
+
+const workTime = normalizeWorkTime(workTimeSpec);
+
 const formatDate = date => 
     `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes()}`;
 
