@@ -25,9 +25,19 @@ module.exports = {
 
 ## Usage
 ### Single date
-`node RecordTimelog.js 2025-09-11`  
+```
+node RecordTimelog.js 2025-09-11
+```
 Logs activity for 2025/09/11 according to config.js.
 
 ### Date range
-`node RecordTimelog.js 2025-09-11 2025-09-15`  
+```
+node RecordTimelog.js 2025-09-11 2025-09-15
+```  
 Logs activities for every day in the range 2025/09/11 – 2025/09/15.
+
+### Fetch statistics only
+```
+node RecordTimelog.js --stats 2025-09-21 2025-09-27
+```
+If no dates are provided, defaults to today → today.
