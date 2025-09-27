@@ -1,4 +1,4 @@
-const { userId, activityUnitId, activityTypeName, workTimeSpec } = require("./myconfig");
+const { userId, activityUnitId, activityTypeName, workTimeSpec } = require("./config");
 
 // --- parser: only support "HH:MM-HH:MM" ---
 function parseInterval(intervalStr) {
