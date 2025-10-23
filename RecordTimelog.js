@@ -1,4 +1,4 @@
-const { userId, activityUnitId, activityTypeName, workTimeSpec } = require("./config");
+const { userId, activityUnitId, activityTypeName, workTimeSpec } = require("./myconfig");
 
 // --- parser: only support "HH:MM-HH:MM" ---
 function parseInterval(intervalStr) {
@@ -125,6 +125,23 @@ async function record(dateOrStartDate, endDate) {
     await fetchStats(startStr, endStr);
 }
 
+async function recordSingleDateWithTime(date, timeRange) {
+    const interval = parseInterval(timeRange);
+    const createActivityTime = (baseDate, time) => {
+        const dateObj = new Date(baseDate);
+        dateObj.setHours(time.hour, time.min);
+        return formatDate(dateObj);
+    };
+
+    const startTime = createActivityTime(date, interval.start);
+    const endTime = createActivityTime(date, interval.end);
+    await sendRecord(startTime, endTime);
+
+    // Fetch stats for the single date
+    const dateStr = formatDate(date).split(" ")[0];
+    await fetchStats(dateStr, dateStr);
+}
+
 // --- CLI ---
 (async () => {
     const args = process.argv.slice(2);
@@ -134,6 +151,7 @@ async function record(dateOrStartDate, endDate) {
         console.log("  node RecordTimelog.js 2025-09-11");
         console.log("  node RecordTimelog.js 2025-09-11 2025-09-15");
         console.log("  node RecordTimelog.js --stats 2025-09-21 2025-09-27");
+        console.log("  node RecordTimelog.js 2025-09-11 09:00-12:00");
         process.exit(1);
     }
 
@@ -148,11 +166,19 @@ async function record(dateOrStartDate, endDate) {
         const date = parseDateFromString(args[0]);
         await record(date);
     } else if (args.length === 2) {
-        const startDate = parseDateFromString(args[0]);
-        const endDate = parseDateFromString(args[1]);
-        await record(startDate, endDate);
+        if (args[1].includes(":")) {
+            // Single date with time range
+            const date = parseDateFromString(args[0]);
+            const timeRange = args[1];
+            await recordSingleDateWithTime(date, timeRange);
+        } else {
+            // Date range
+            const startDate = parseDateFromString(args[0]);
+            const endDate = parseDateFromString(args[1]);
+            await record(startDate, endDate);
+        }
     } else {
-        console.log("Invalid arguments. Please provide one or two dates (YYYY-MM-DD).");
+        console.log("Invalid arguments. Please provide one or two dates (YYYY-MM-DD) or a date with a time range.");
         process.exit(1);
     }
 })();
