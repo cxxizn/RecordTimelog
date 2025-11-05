@@ -87,6 +87,43 @@ const fetchStats = async (startDate, endDate) => {
     }
 };
 
+const fetchHistory = async (startDate, endDate) => {
+    try {
+        const response = await fetch("http://140.124.181.95:30200/api/log/history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                userID: userId,
+                startDate,
+                endDate
+            })
+        });
+
+        if (!response.ok) {
+            console.error(`Failed to fetch history: ${response.statusText}`);
+            process.exit(1);
+        }
+
+        const data = await response.json();
+        const sortedLogs = data.logItemList.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+        console.log("\n================ Log History ================");
+        console.log("Range:", startDate, "→", endDate);
+        console.table(
+            sortedLogs.map(log => ({
+                ID: log.id,
+                Activity: log.activityTypeName,
+                Team: log.teamName,
+                Title: log.title,
+                Start: log.startTime,
+                End: log.endTime
+            }))
+        );
+    } catch (err) {
+        console.error("Error fetching log history:", err);
+    }
+};
+
 // --- main logic ---
 async function record(dateOrStartDate, endDate) {
     const createActivityTime = (baseDate, time) => {
@@ -142,23 +179,70 @@ async function recordSingleDateWithTime(date, timeRange) {
     await fetchStats(dateStr, dateStr);
 }
 
+async function removeLog(logID) {
+    const payload = {
+        userID: "75998fc5-28f0-4a72-b870-d72973924c08",
+        logID: logID
+    };
+
+    const response = await fetch("http://140.124.181.95:30200/api/log/remove", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        console.error(`Failed to remove log: ${response.statusText}`);
+        process.exit(1);
+    }
+
+    console.log(`Log ${logID} removed successfully.`);
+}
+
 // --- CLI ---
 (async () => {
     const args = process.argv.slice(2);
 
     if (args.length === 0) {
         console.log("Usage:");
-        console.log("  node RecordTimelog.js 2025-09-11");
-        console.log("  node RecordTimelog.js 2025-09-11 2025-09-15");
-        console.log("  node RecordTimelog.js --stats 2025-09-21 2025-09-27");
+        console.log("  node RecordTimelog.js <date>");
+        console.log("  node RecordTimelog.js <startDate> <endDate>");
+        console.log("  node RecordTimelog.js -t <startDate> <endDate>");
         console.log("  node RecordTimelog.js 2025-09-11 09:00-12:00");
+        console.log("  node RecordTimelog.js -r <logID>");
+        console.log("  node RecordTimelog.js -h <startDate> <endDate>");
         process.exit(1);
     }
 
-    if (args[0] === "--stats") {
+    if (args[0] === "-r") {
+        if (args.length < 2) {
+            console.error("Please provide a logID to remove.");
+            process.exit(1);
+        }
+
+        const logID = args[1];
+        await removeLog(logID);
+        process.exit(0);
+    }
+
+    if (args[0] === "-t") {
         const start = args[1] ? args[1].replace(/-/g, "/") : formatDate(new Date()).split(" ")[0];
         const end = args[2] ? args[2].replace(/-/g, "/") : start;
         await fetchStats(start, end);
+        process.exit(0);
+    }
+
+    if (args[0] === "-h") {
+        if (args.length < 3) {
+            console.error("Please provide a startDate and endDate for history.");
+            process.exit(1);
+        }
+
+        const startDate = args[1].replace(/-/g, "/");
+        const endDate = args[2].replace(/-/g, "/");
+        await fetchHistory(startDate, endDate);
         process.exit(0);
     }
 
