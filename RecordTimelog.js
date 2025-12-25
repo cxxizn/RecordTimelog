@@ -1,15 +1,38 @@
 const { userId, activityUnitId, activityTypeName, workTimeSpec } = require("./myconfig");
+const readline = require('readline');
 
-// --- parser: only support "HH:MM-HH:MM" ---
-function parseInterval(intervalStr) {
-    const match = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(intervalStr.trim());
-    if (!match) {
-        throw new Error(`Invalid interval format: ${intervalStr}. Expected HH:MM-HH:MM`);
+// --- parser: support flexible formats "HH:MM-HH:MM", "H-H", "HMM-HMM" ---
+function parseTimePart(part) {
+    part = part.trim();
+    if (!part) throw new Error("Empty time part");
+
+    let h, m;
+    if (part.includes(":")) {
+        [h, m] = part.split(":").map(Number);
+    } else {
+        if (part.length <= 2) {
+            h = Number(part);
+            m = 0;
+        } else {
+            // 3 or 4 digits: 930 -> 09:30, 1330 -> 13:30
+            h = Number(part.slice(0, part.length - 2));
+            m = Number(part.slice(part.length - 2));
+        }
     }
-    const [, sh, sm, eh, em] = match.map(Number);
+
+    if (isNaN(h) || isNaN(m)) throw new Error(`Invalid time number: ${part}`);
+    return { hour: h, min: m };
+}
+
+function parseInterval(intervalStr) {
+    const parts = intervalStr.split("-");
+    if (parts.length !== 2) {
+        throw new Error(`Invalid interval format: ${intervalStr}. Expected Start-End (e.g., 9-18, 09:00-18:00, 9-1330)`);
+    }
+
     return {
-        start: { hour: sh, min: sm },
-        end: { hour: eh, min: em }
+        start: parseTimePart(parts[0]),
+        end: parseTimePart(parts[1])
     };
 }
 
@@ -24,9 +47,13 @@ function normalizeWorkTime(spec) {
 
 const workTime = normalizeWorkTime(workTimeSpec);
 
+// --- constants ---
+const API_BASE_URL = "http://140.124.181.95:30200";
+
 // --- helpers ---
+const pad = (n) => String(n).padStart(2, '0');
 const formatDate = date =>
-    `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes()}`;
+    `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 
 const parseDateFromString = (dateStr) => {
     const [year, month, day] = dateStr.split("-").map(Number);
@@ -42,7 +69,7 @@ class TimelogAPI {
 
     async sendRecord(startTime, endTime) {
         try {
-            const response = await fetch("http://140.124.181.95:30200/api/log/record", {
+            const response = await fetch(`${API_BASE_URL}/api/log/record`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -65,7 +92,7 @@ class TimelogAPI {
 
     async fetchStats(startDate, endDate) {
         try {
-            const res = await fetch("http://140.124.181.95:30200/api/dash-board/spent-time", {
+            const res = await fetch(`${API_BASE_URL}/api/dash-board/spent-time`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -95,7 +122,7 @@ class TimelogAPI {
 
     async fetchHistory(startDate, endDate) {
         try {
-            const response = await fetch("http://140.124.181.95:30200/api/log/history", {
+            const response = await fetch(`${API_BASE_URL}/api/log/history`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -136,7 +163,7 @@ class TimelogAPI {
             logID: logID
         };
 
-        const response = await fetch("http://140.124.181.95:30200/api/log/remove", {
+        const response = await fetch(`${API_BASE_URL}/api/log/remove`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -214,6 +241,89 @@ class TimelogManager {
     }
 }
 
+// --- Interactive Helpers ---
+function promptUser(query) {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    return new Promise(resolve => rl.question(query, ans => {
+        rl.close();
+        resolve(ans.trim());
+    }));
+}
+
+async function interactiveMode(api, manager) {
+    console.log("\n--- RecordTimelog Interactive Mode ---");
+    console.log("1. Record Single Date (with optional time range)");
+    console.log("2. Record Date Range");
+    console.log("3. Query Stats (Date Range)");
+    console.log("4. Query History (Date Range)");
+    console.log("5. Delete Record (by ID)");
+    console.log("6. Exit");
+
+    const choice = await promptUser("Select an option (1-6): ");
+
+    try {
+        if (choice === "1") {
+            const dateStr = await promptUser("Enter Date (YYYY-MM-DD) [default: Today]: ");
+            const finalDateStr = dateStr || formatDate(new Date()).split(" ")[0];
+            const timeRange = await promptUser("Enter Time Range (optional, e.g., 9-18, 930-1200) [default: full day from config]: ");
+
+            if (timeRange) {
+                const date = parseDateFromString(finalDateStr);
+                await manager.recordSingleDateWithTime(date, timeRange);
+            } else {
+                const date = parseDateFromString(finalDateStr);
+                await manager.record(date);
+            }
+
+        } else if (choice === "2") {
+            const startStr = await promptUser("Enter Start Date (YYYY-MM-DD): ");
+            const endStr = await promptUser("Enter End Date (YYYY-MM-DD): ");
+            if (!startStr || !endStr) {
+                console.error("Start and End dates are required.");
+                return;
+            }
+            const startDate = parseDateFromString(startStr);
+            const endDate = parseDateFromString(endStr);
+            await manager.record(startDate, endDate);
+
+        } else if (choice === "3") {
+            const startStr = await promptUser("Enter Start Date (YYYY-MM-DD) [default: Today]: ");
+            const actualStart = startStr || formatDate(new Date()).split(" ")[0];
+            const endStr = await promptUser(`Enter End Date (YYYY-MM-DD) [default: ${actualStart}]: `);
+            const actualEnd = endStr || actualStart;
+
+            await api.fetchStats(actualStart.replace(/-/g, "/"), actualEnd.replace(/-/g, "/"));
+
+        } else if (choice === "4") {
+            const startStr = await promptUser("Enter Start Date (YYYY-MM-DD) [default: Today]: ");
+            const actualStart = startStr || formatDate(new Date()).split(" ")[0];
+            const endStr = await promptUser(`Enter End Date (YYYY-MM-DD) [default: ${actualStart}]: `);
+            const actualEnd = endStr || actualStart;
+
+            await api.fetchHistory(actualStart.replace(/-/g, "/"), actualEnd.replace(/-/g, "/"));
+
+        } else if (choice === "5") {
+            const logID = await promptUser("Enter Log ID to remove: ");
+            if (logID) {
+                await api.removeLog(logID);
+            } else {
+                console.log("No Log ID provided.");
+            }
+
+        } else if (choice === "6") {
+            process.exit(0);
+        } else {
+            console.log("Invalid option.");
+        }
+    } catch (err) {
+        console.error("Error:", err.message);
+    }
+}
+
 // --- CLI ---
 (async () => {
     const api = new TimelogAPI(userId, activityUnitId, activityTypeName);
@@ -222,14 +332,8 @@ class TimelogManager {
     const args = process.argv.slice(2);
 
     if (args.length === 0) {
-        console.log("Usage:");
-        console.log("  node RecordTimelog.js <date>");
-        console.log("  node RecordTimelog.js <startDate> <endDate>");
-        console.log("  node RecordTimelog.js -t <startDate> <endDate>");
-        console.log("  node RecordTimelog.js 2025-09-11 09:00-12:00");
-        console.log("  node RecordTimelog.js -r <logID>");
-        console.log("  node RecordTimelog.js -h <startDate> <endDate>");
-        process.exit(1);
+        await interactiveMode(api, manager);
+        return;
     }
 
     if (args[0] === "-r") {
@@ -237,9 +341,7 @@ class TimelogManager {
             console.error("Please provide a logID to remove.");
             process.exit(1);
         }
-
-        const logID = args[1];
-        await api.removeLog(logID);
+        await api.removeLog(args[1]);
         process.exit(0);
     }
 
@@ -255,30 +357,33 @@ class TimelogManager {
             console.error("Please provide a startDate and endDate for history.");
             process.exit(1);
         }
-
-        const startDate = args[1].replace(/-/g, "/");
-        const endDate = args[2].replace(/-/g, "/");
-        await api.fetchHistory(startDate, endDate);
+        await api.fetchHistory(args[1].replace(/-/g, "/"), args[2].replace(/-/g, "/"));
         process.exit(0);
     }
+
+    const isDateFormat = (str) => /^\d{4}-\d{1,2}-\d{1,2}$/.test(str);
 
     if (args.length === 1) {
         const date = parseDateFromString(args[0]);
         await manager.record(date);
     } else if (args.length === 2) {
-        if (args[1].includes(":")) {
-            // Single date with time range
-            const date = parseDateFromString(args[0]);
-            const timeRange = args[1];
-            await manager.recordSingleDateWithTime(date, timeRange);
-        } else {
-            // Date range
+        if (isDateFormat(args[1])) {
             const startDate = parseDateFromString(args[0]);
             const endDate = parseDateFromString(args[1]);
             await manager.record(startDate, endDate);
+        } else {
+            const date = parseDateFromString(args[0]);
+            await manager.recordSingleDateWithTime(date, args[1]);
         }
     } else {
-        console.log("Invalid arguments. Please provide one or two dates (YYYY-MM-DD) or a date with a time range.");
+        console.log("Usage:");
+        console.log("  node RecordTimelog.js                 (Interactive Mode)");
+        console.log("  node RecordTimelog.js <date>");
+        console.log("  node RecordTimelog.js <startDate> <endDate>");
+        console.log("  node RecordTimelog.js <date> <timeRange>");
+        console.log("  node RecordTimelog.js -t <startDate> <endDate>");
+        console.log("  node RecordTimelog.js -r <logID>");
+        console.log("  node RecordTimelog.js -h <startDate> <endDate>");
         process.exit(1);
     }
 })();

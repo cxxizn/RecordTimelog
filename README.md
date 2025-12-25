@@ -24,20 +24,66 @@ module.exports = {
 ```
 
 ## Usage
-### Single date
+
+### Interactive Mode (Recommended)
+Simply run the script without arguments to enter the interactive menu:
+```bash
+node RecordTimelog.js
 ```
+Menu options:
+1. **Record Single Date**: Log activities for a specific date (default: today). You can also specify a custom time range (e.g., `1000-1200` or `10:00-12:00`).
+2. **Record Date Range**: Log activities for a range of dates.
+3. **Query Stats**: View total time spent per activity type for a given date range.
+4. **Query History**: View detailed log entries (includes Log IDs) for a given date range.
+5. **Delete Record**: Delete a specific log entry by providing its Log ID (found via Query History).
+6. **Exit**: Close the tool.
+
+### CLI Commands
+
+#### Record for a Single Date
+```bash
+node RecordTimelog.js <YYYY-MM-DD> [TimeRange]
+```
+Example:
+```bash
 node RecordTimelog.js 2025-09-11
+# With custom time range:
+node RecordTimelog.js 2025-09-11 1300-1800
 ```
-Logs activity for 2025/09/11 according to config.js.
 
-### Date range
+#### Record for a Date Range
+```bash
+node RecordTimelog.js <StartDate> <EndDate>
 ```
+Example:
+```bash
 node RecordTimelog.js 2025-09-11 2025-09-15
-```  
-Logs activities for every day in the range 2025/09/11 – 2025/09/15.
+```
 
-### Fetch statistics only
+#### Query Statistics (Total Time)
+```bash
+node RecordTimelog.js -t <StartDate> <EndDate>
 ```
-node RecordTimelog.js --stats 2025-09-21 2025-09-27
+Example:
+```bash
+node RecordTimelog.js -t 2025-09-21 2025-09-27
 ```
-If no dates are provided, defaults to today → today.
+
+#### Query Log History (Detailed Logs)
+Useful for finding Log IDs to delete.
+```bash
+node RecordTimelog.js -h <StartDate> <EndDate>
+```
+Example:
+```bash
+node RecordTimelog.js -h 2025-12-01 2025-12-25
+```
+
+#### Delete a Record
+```bash
+node RecordTimelog.js -r <LogID>
+```
+Example:
+```bash
+node RecordTimelog.js -r 12345
+```
